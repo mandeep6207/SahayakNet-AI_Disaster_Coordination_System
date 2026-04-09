@@ -159,13 +159,6 @@ npm run dev
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000
 
-## 🖼️ Screenshots
-
-- [Placeholder] Landing page and multi-channel overview
-- [Placeholder] NGO command center with map and alerts
-- [Placeholder] Volunteer dashboard with mission timeline and ETA
-- [Placeholder] Drone detection to auto-request pipeline
-
 ## 🔮 Future Scope
 
 - Persistent database and event streaming for scale.
@@ -178,6 +171,3 @@ npm run dev
 
 Contributions are welcome.
 
-- [Your Name] - Role
-- [Contributor 2] - Role
-- [Contributor 3] - Role
