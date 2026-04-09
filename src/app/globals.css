@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  --navy: #0b3c5d;
+  --bg: #ffffff;
+  --soft: #f5f7fa;
+  --line: #d9e0e6;
+  --danger: #d32f2f;
+  --success: #2e7d32;
+  --warn: #ed6c02;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: #1f2937;
+}
+
+.gov-top-strip {
+  background: var(--navy);
+  color: #fff;
+  text-align: center;
+  font-size: 12px;
+  padding: 6px 12px;
+  letter-spacing: 0.02em;
+}
+
+.site-header {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.gov-section {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.gov-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.gov-title {
+  color: var(--navy);
+  font-weight: 700;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+.map-container {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+button {
+  transition: transform 140ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+@keyframes statusFlash {
+  0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.3); }
+  100% { box-shadow: 0 0 0 12px rgba(37, 99, 235, 0); }
+}
+
+.status-flash {
+  animation: statusFlash 900ms ease-out;
+}
