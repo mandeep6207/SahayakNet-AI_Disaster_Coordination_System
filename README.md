@@ -1,98 +1,132 @@
 # SahayakNet-AI
 
-AI-powered disaster management and emergency response platform for real-time coordination between citizens, NGOs, and volunteers.
+### AI-powered emergency response network for faster, smarter disaster relief.
 
-## Achievement
+![Winner](https://img.shields.io/badge/BIT%20Sindri%20Hackatron%203.0-1st%20Prize-gold)
+![Status](https://img.shields.io/badge/status-prototype%20to%20production--ready-0a7ea4)
+![Frontend](https://img.shields.io/badge/frontend-Next.js%20%7C%20React-111827)
+![Backend](https://img.shields.io/badge/backend-FastAPI-009688)
+![AI](https://img.shields.io/badge/AI-YOLOv8%20%2B%20OpenCV-orange)
+![Comms](https://img.shields.io/badge/communication-Twilio%20WhatsApp%20%7C%20SMS%20%7C%20IVR-25D366)
+![Maps](https://img.shields.io/badge/mapping-Leaflet-199900)
 
-🏆 This project won 1st Prize at BIT Sindri Hackatron 3.0.
+## 🏆 Achievement
 
-## Features
+**Winner - 1st Prize at BIT Sindri Hackatron 3.0** for building an AI-first, multi-channel disaster coordination platform.
 
-- Twilio-powered WhatsApp chatbot for SOS reporting and guided request capture.
-- Multi-channel intake pipeline: WhatsApp, SMS, IVR, missed-call callbacks, and drone detections.
-- Drone AI surveillance using YOLOv8 + OpenCV for automatic emergency request generation.
-- Real-time NGO command center with map intelligence, alerts, risk insights, and operational analytics.
-- Autonomous volunteer assignment using location proximity, availability, and request priority.
-- Live mission lifecycle tracking with status updates and ETA-aware response flow.
-- Zone-based broadcast alert engine with weather/risk-aware communication triggers.
-- Priority-based rescue classification (Low/Medium/High) with severity-aware escalation.
-- Duplicate request detection and merge logic to prevent operational noise.
-- Offline/disaster-resilient communication concepts with queued synchronization behavior.
+## 🚀 Overview
 
-## Tech Stack
+SahayakNet-AI enables citizens, NGOs, volunteers, and authorities to coordinate rescue operations in real time.
+It unifies emergency intake, AI-assisted prioritization, volunteer dispatch, and mission tracking in one operational platform.
 
-- Frontend: Next.js, React, Tailwind CSS
-- Backend: FastAPI (Python)
-- AI/ML: YOLOv8, OpenCV, NumPy
-- Communication: Twilio WhatsApp API, SMS, IVR
-- Mapping: Leaflet and map overlays
-- Realtime: Async processing, background tasks, cached dashboard snapshots
+## ✨ Core Features
 
-## Architecture Overview
+- **WhatsApp SOS Chatbot (Twilio):** Guided emergency reporting with structured intake.
+- **Multi-Channel Ingestion:** WhatsApp, SMS, IVR, missed calls, web requests, and drone-triggered events.
+- **Drone AI Detection:** YOLOv8 + OpenCV surveillance auto-generates rescue requests from aerial intelligence.
+- **Command Center Dashboard:** Live map, alerts, risk insights, and operational analytics for rapid decisions.
+- **Autonomous Assignment Engine:** Priority + proximity based volunteer allocation.
+- **Mission Tracking and ETA Flow:** End-to-end visibility from assignment to completion.
+- **Zone-Based Broadcast Alerts:** Channel-aware public advisories based on weather and risk context.
+- **Priority Classification:** Low, Medium, High risk triage for faster critical response.
+- **Duplicate Detection and Merge:** Prevents duplicate ticket noise during high-volume incidents.
+- **Offline-Resilient Concepts:** Queue-and-sync workflow for degraded network conditions.
 
-High-level flow:
+## 🧠 Why This Matters
 
-Input Channels -> Ingestion APIs -> Validation + Dedup + Prioritization -> Assignment Engine -> Command Center Dashboard -> Volunteer Mission Execution
+- Reduces emergency response delay when minutes are critical.
+- Prevents coordination chaos by centralizing channels and operations.
+- Improves rescue efficiency through smart triage and auto-assignment.
+- Builds disaster resilience for low-connectivity and high-stress conditions.
 
-Core architecture components:
+## 🏗️ Architecture Overview
 
-- Input channels: Citizens and field systems submit events via WhatsApp, SMS, IVR, web forms, and drone detections.
-- Processing layer: FastAPI services normalize payloads, classify severity, calculate resources, detect duplicates, and enrich geospatial metadata.
-- Assignment layer: Auto-assignment matches requests to best-fit volunteers by zone, proximity, and current workload.
-- Operations layer: Dashboard APIs provide compact/full snapshots, live alerts, and mission status views for NGOs/government coordinators.
-- Communication layer: Broadcast and channel-specific responses (SMS/WhatsApp/IVR/app) close the response loop.
+```text
+[Citizens / Sensors / Drones]
+          |
+          v
+[WhatsApp | SMS | IVR | Web | Drone APIs]
+          |
+          v
+[FastAPI Ingestion Layer]
+  - validation
+  - deduplication
+  - priority scoring
+  - resource estimation
+          |
+          v
+[Assignment + Mission Engine]
+  - volunteer matching
+  - status transitions
+  - ETA and tracking
+          |
+          v
+[NGO Command Center Dashboard]
+  - live map
+  - analytics
+  - alert controls
+          |
+          v
+[Volunteers + Broadcast Channels]
+```
 
-State management and caching:
+### State and Caching
 
-- In-memory operational stores maintain active requests, missions, volunteers, alerts, and assignment tracking.
-- Dashboard cache snapshots reduce repeated aggregation overhead and improve responsiveness during spikes.
-- Duplicate indexes and short-window event tracking prevent repeated request creation from the same incident.
+- In-memory operational state for requests, missions, volunteers, and alerts.
+- Dashboard snapshots for fast reads under high event load.
+- Short-window dedup indexes to suppress repeated incident creation.
 
-Request lifecycle:
+## ⚙️ How It Works
 
-1. Intake: Request enters from channel.
-2. Normalize: Data is validated, location-normalized, and source-tagged.
-3. Prioritize: Risk score and urgency are computed.
-4. Deduplicate: Similar active requests are merged or linked.
-5. Assign: Best volunteer is selected and notified.
-6. Execute: Mission progresses through accepted, on-the-way, and completion states.
-7. Analyze: Metrics update command center analytics and historical alert feeds.
+1. An incident is reported from WhatsApp/SMS/IVR/web/drone.
+2. Backend normalizes data and checks for duplicates.
+3. Priority is computed and risk category is assigned.
+4. Best-fit volunteer is auto-assigned by zone and availability.
+5. Mission status flows from assigned to on-the-way to completed.
+6. Dashboard updates in real time, with alerts and operational metrics.
 
-## System Workflow
+## 🔌 API Endpoints Overview
 
-1. Citizen or sensor generates an emergency signal.
-2. FastAPI intake endpoints parse and classify the event.
-3. Priority engine labels risk and required resource profile.
-4. Duplicate detection merges equivalent incidents.
-5. Assignment system dispatches nearest suitable volunteer.
-6. Command center tracks mission progress and ETA in real time.
-7. Broadcast module pushes zone-specific advisories when risk thresholds are crossed.
+- **Requests:** `POST /request`, `POST /requests`, `GET /requests`, `GET /request/{request_id}`
+- **Assignment and Missions:** `POST /assign`, `POST /auto-assign`, `POST /mission/start`, `POST /complete`
+- **Volunteer Ops:** `POST /volunteer`, `GET /volunteers`, `POST /volunteer/status`, `POST /volunteer/accept`, `POST /volunteer/reject`
+- **Channel Intake:** `POST /whatsapp`, `POST /sms`, `POST /ivr`, `POST /missed-call`
+- **Drone AI:** `POST /drone`, `POST /drone/detect`, `POST /predict`, `GET /drone/frame/{filename}`
+- **Alerts and Insights:** `POST /alerts`, `POST /broadcast`, `GET /alerts/history`, `GET /weather`, `GET /risk-analysis`, `GET /dashboard`
 
-## API Endpoints Overview
+## 📁 Folder Structure
 
-Representative backend endpoints:
+```text
+sahayaknet/
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── data.json
+│   ├── whatsapp_requests.json
+│   └── events/
+├── public/
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   ├── command-center/
+│   │   ├── government/
+│   │   ├── volunteer/
+│   │   └── citizen/
+│   ├── components/
+│   └── lib/
+├── package.json
+└── README.md
+```
 
-- Request management: `POST /request`, `POST /requests`, `GET /requests`, `GET /request/{request_id}`
-- Assignment and missions: `POST /assign`, `POST /auto-assign`, `POST /mission/start`, `POST /complete`
-- Volunteer operations: `POST /volunteer`, `GET /volunteers`, `POST /volunteer/status`, `POST /volunteer/accept`, `POST /volunteer/reject`
-- Multi-channel intake: `POST /whatsapp`, `POST /sms`, `POST /ivr`, `POST /missed-call`
-- Drone intelligence: `POST /drone`, `POST /drone/detect`, `POST /predict`, `GET /drone/frame/{filename}`
-- Alerts and analytics: `POST /alerts`, `POST /broadcast`, `GET /alerts/history`, `GET /weather`, `GET /risk-analysis`, `GET /dashboard`
+## 🛠️ Installation and Setup
 
-## Installation and Setup
-
-Prerequisites:
+### Prerequisites
 
 - Node.js 20+
 - Python 3.10+
 - pip and virtual environment support
 
-1. Clone repository and enter project directory.
-2. Setup backend environment.
-3. Install frontend dependencies.
-4. Configure environment variables (Twilio credentials, webhook/public URL, optional map/weather keys).
-
-Backend setup:
+### Backend
 
 ```bash
 cd backend
@@ -101,50 +135,49 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Frontend setup:
+### Frontend
 
 ```bash
 npm install
 ```
 
-## Running the Project
+## ▶️ Running the Project
 
-Start backend:
+### Start Backend
 
 ```bash
 cd backend
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Start frontend (new terminal):
+### Start Frontend
 
 ```bash
 npm run dev
 ```
 
-Local URLs:
-
 - Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
+- Backend: http://localhost:8000
 
-## Screenshots
+## 🖼️ Screenshots
 
-- [Placeholder] Landing page and channel overview
-- [Placeholder] NGO command center with live map
-- [Placeholder] Volunteer mission dashboard and ETA flow
+- [Placeholder] Landing page and multi-channel overview
+- [Placeholder] NGO command center with map and alerts
+- [Placeholder] Volunteer dashboard with mission timeline and ETA
 - [Placeholder] Drone detection to auto-request pipeline
-- [Placeholder] WhatsApp SOS conversation flow
 
-## Future Improvements
+## 🔮 Future Scope
 
-- Persistent datastore and event streaming for large-scale deployments.
-- GIS-grade routing and dynamic ETA based on road/flood conditions.
-- Multilingual NLP for regional dialects in WhatsApp/SMS/IVR.
-- Edge AI drone nodes with intermittent connectivity sync.
-- Policy-driven inter-agency orchestration and audit trails.
+- Persistent database and event streaming for scale.
+- Smarter routing and dynamic ETA with disaster-aware map layers.
+- Multilingual conversational AI for regional emergency communication.
+- Edge drone processing with intermittent sync.
+- Inter-agency audit logs and policy-driven response workflows.
 
-## Contributors
+## 🤝 Contributors
 
-Built with a collaborative hackathon team of developers, AI engineers, and disaster-response problem solvers.
+Contributions are welcome.
 
-To add contributors, include names and roles in this section.
+- [Your Name] - Role
+- [Contributor 2] - Role
+- [Contributor 3] - Role
