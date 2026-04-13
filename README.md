@@ -16,7 +16,7 @@
 
 ## 🚀 Overview
 
-SahayakNet-AI enables citizens, NGOs, volunteers, and authorities to coordinate rescue operations in real time.
+SahayakNet-AI enables citizens, NGOs/Government, volunteers, and authorities to coordinate rescue operations in real time.
 It unifies emergency intake, AI-assisted prioritization, volunteer dispatch, and mission tracking in one operational platform.
 
 ## ✨ Core Features
