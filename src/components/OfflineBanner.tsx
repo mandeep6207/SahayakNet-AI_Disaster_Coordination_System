@@ -4,7 +4,7 @@ import { useApp } from '@/lib/store';
 import { WifiOff, RefreshCw } from 'lucide-react';
 
 export default function OfflineBanner() {
-  const { state, toggleOnline, syncPending } = useApp();
+  const { state, syncPending } = useApp();
 
   if (state.isOnline && state.pendingQueue.length === 0) return null;
 

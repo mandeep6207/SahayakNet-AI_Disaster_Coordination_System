@@ -184,7 +184,21 @@ export default function GovernmentVolunteersPage() {
 
   const totalDelivered = deliveryLogs.reduce((sum, row) => sum + row.quantity, 0);
   const visibleVolunteers = filteredVolunteers.slice(0, 20);
-  const historyRows = deliveryLogs.length ? deliveryLogs : MOCK_HISTORY;
+  const liveHistory = useMemo(() => {
+    return state.dashboard.requests
+      .filter((req) => req.status !== 'completed' && (req.assignedVolunteerName || req.assignedVolunteerId))
+      .slice(0, 8)
+      .map((req) => ({
+        id: req.id,
+        volunteerName: req.assignedVolunteerName || req.assignedVolunteerId || 'Assigned volunteer',
+        resource: 'Emergency Essentials' as const,
+        quantity: req.people || 1,
+        at: req.assignedAt || req.createdAt,
+        requestId: req.id,
+      }));
+  }, [state.dashboard.requests]);
+
+  const historyRows = deliveryLogs.length ? deliveryLogs : [...liveHistory, ...MOCK_HISTORY];
   const activeRequestLabel = selectedRequest?.category ? selectedRequest.category.replaceAll('_', ' ').toUpperCase() : 'NONE';
 
   const toggleActive = (volunteerId: string) => {
@@ -197,14 +211,15 @@ export default function GovernmentVolunteersPage() {
 
   const addResourceLogs = (requestId: string, volunteerName: string) => {
     const now = new Date().toLocaleString();
+    const logBatchId = `${requestId}-${deliveryLogs.length + 1}`;
     const logs: DeliveryLog[] = [];
-    if (resourceDraft.food > 0) logs.push({ id: `LOG-${Date.now()}-F`, volunteerName, resource: 'Food Kits', quantity: resourceDraft.food, at: now, requestId });
-    if (resourceDraft.medical > 0) logs.push({ id: `LOG-${Date.now()}-M`, volunteerName, resource: 'Medical Kits', quantity: resourceDraft.medical, at: now, requestId });
-    if (resourceDraft.rescueTools > 0) logs.push({ id: `LOG-${Date.now()}-R`, volunteerName, resource: 'Rescue Tools', quantity: resourceDraft.rescueTools, at: now, requestId });
-    if (resourceDraft.babyCare > 0) logs.push({ id: `LOG-${Date.now()}-B`, volunteerName, resource: 'Baby Care Kits', quantity: resourceDraft.babyCare, at: now, requestId });
-    if (resourceDraft.womenCare > 0) logs.push({ id: `LOG-${Date.now()}-W`, volunteerName, resource: 'Women Care Kits', quantity: resourceDraft.womenCare, at: now, requestId });
-    if (resourceDraft.waterSupply > 0) logs.push({ id: `LOG-${Date.now()}-H`, volunteerName, resource: 'Water Supply', quantity: resourceDraft.waterSupply, at: now, requestId });
-    if (resourceDraft.emergencyEssentials > 0) logs.push({ id: `LOG-${Date.now()}-E`, volunteerName, resource: 'Emergency Essentials', quantity: resourceDraft.emergencyEssentials, at: now, requestId });
+    if (resourceDraft.food > 0) logs.push({ id: `LOG-${logBatchId}-F`, volunteerName, resource: 'Food Kits', quantity: resourceDraft.food, at: now, requestId });
+    if (resourceDraft.medical > 0) logs.push({ id: `LOG-${logBatchId}-M`, volunteerName, resource: 'Medical Kits', quantity: resourceDraft.medical, at: now, requestId });
+    if (resourceDraft.rescueTools > 0) logs.push({ id: `LOG-${logBatchId}-R`, volunteerName, resource: 'Rescue Tools', quantity: resourceDraft.rescueTools, at: now, requestId });
+    if (resourceDraft.babyCare > 0) logs.push({ id: `LOG-${logBatchId}-B`, volunteerName, resource: 'Baby Care Kits', quantity: resourceDraft.babyCare, at: now, requestId });
+    if (resourceDraft.womenCare > 0) logs.push({ id: `LOG-${logBatchId}-W`, volunteerName, resource: 'Women Care Kits', quantity: resourceDraft.womenCare, at: now, requestId });
+    if (resourceDraft.waterSupply > 0) logs.push({ id: `LOG-${logBatchId}-H`, volunteerName, resource: 'Water Supply', quantity: resourceDraft.waterSupply, at: now, requestId });
+    if (resourceDraft.emergencyEssentials > 0) logs.push({ id: `LOG-${logBatchId}-E`, volunteerName, resource: 'Emergency Essentials', quantity: resourceDraft.emergencyEssentials, at: now, requestId });
     if (logs.length > 0) setDeliveryLogs((prev) => [...logs, ...prev]);
   };
 

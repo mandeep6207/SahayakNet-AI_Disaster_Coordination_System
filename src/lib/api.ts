@@ -1,6 +1,8 @@
 import { BroadcastHistoryItem, BroadcastMessageType, DashboardData, DroneDetectionResult, HelpRequest, RiskAnalysis, Volunteer, WeatherData } from './mockData';
+import mergeRequests, { DEMO_REQUESTS } from './mergeRequests';
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000').replace(/\/$/, '');
+// Default to backend port 8001 used by the local FastAPI server
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001').replace(/\/$/, '');
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(`${API_BASE}${path}`, {
@@ -19,7 +21,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getRequests(): Promise<HelpRequest[]> {
-	return call<HelpRequest[]>('/requests');
+	return call<HelpRequest[]>('/requests').then((live) => mergeRequests(DEMO_REQUESTS, live || []));
 }
 
 export function getRequestById(requestId: string): Promise<HelpRequest> {
@@ -31,7 +33,10 @@ export function getVolunteers(): Promise<Volunteer[]> {
 }
 
 export function getDashboard(): Promise<DashboardData> {
-	return call<DashboardData>('/dashboard?compact=1');
+	return call<DashboardData>('/dashboard?compact=1').then((d) => ({
+		...d,
+		requests: mergeRequests(DEMO_REQUESTS, d.requests || []),
+	}));
 }
 
 export function createRequest(payload: {

@@ -11,7 +11,8 @@ import {
   startMission,
   updatePriority,
 } from './api';
-import { DashboardData, FALLBACK_DASHBOARD, HelpRequest } from './mockData';
+import { DashboardData, HelpRequest } from './mockData';
+import { buildDemoDashboard } from './mergeRequests';
 import { getUser as getAuthUser, login as authLogin, logout as authLogout } from './auth';
 
 export type UserRole = 'citizen' | 'volunteer' | 'government' | null;
@@ -72,7 +73,7 @@ const USER_KEY = 'sahayaknet_user';
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [dashboard, setDashboard] = useState<DashboardData>(FALLBACK_DASHBOARD);
+  const [dashboard, setDashboard] = useState<DashboardData>(buildDemoDashboard());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isOnline, setIsOnline] = useState(true);

@@ -10,6 +10,7 @@ import importlib
 import os
 import random
 import time
+import traceback
 from datetime import datetime, timezone
 from math import ceil
 from pathlib import Path
@@ -17,12 +18,18 @@ from urllib.request import urlopen
 from urllib.parse import parse_qs
 from typing import Any, Literal, Optional
 from xml.sax.saxutils import escape as xml_escape
+import tempfile
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+try:
+    from twilio.twiml.voice_response import VoiceResponse
+except ImportError:  # Twilio is listed in requirements; this keeps local partial installs from crashing startup.
+    VoiceResponse = None  # type: ignore[assignment]
 
 
 RequestCategory = Literal["food", "medical", "rescue", "shelter", "baby_care", "women_care", "water", "emergency_help"]
@@ -316,6 +323,29 @@ def backend_public_url() -> str:
     return os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000").rstrip("/")
 
 
+def twilio_voice_response() -> Any:
+    if VoiceResponse is None:
+        raise RuntimeError("Twilio VoiceResponse is unavailable. Install the 'twilio' package.")
+    return VoiceResponse()
+
+
+def twiml_response(content: Any, status_code: int = 200) -> Response:
+    return Response(content=str(content), media_type="application/xml", status_code=status_code)
+
+
+def fallback_twiml(message: str = "An internal error occurred. Please try again.") -> Response:
+    try:
+        vr = twilio_voice_response()
+        vr.say(message, voice="alice")
+        return twiml_response(vr)
+    except Exception:
+        return Response(
+            content=f"<Response><Say voice=\"alice\">{xml_escape(message)}</Say></Response>",
+            media_type="application/xml",
+            status_code=200,
+        )
+
+
 def is_twilio_signature_valid(signature: str, url: str, form: dict[str, list[str]], auth_token: str) -> bool:
     # Twilio signature: base64(HMAC-SHA1(auth_token, url + sorted(form_key + form_value))).
     payload = url
@@ -369,9 +399,11 @@ def whatsapp_random_near_zone(zone: str) -> tuple[float, float]:
 
 def whatsapp_language_prompt() -> str:
     return (
-        "SahayakNet Disaster Help System\n\n"
-        "Press 1 for Hindi\n"
-        "Press 2 for English"
+        "🌐 *SahayakNet-AI Disaster Help System*\n\n"
+        "🙏 नमस्ते! Welcome to our emergency assistance system.\n\n"
+        "🌍 Please choose your preferred language:\n"
+        "1️⃣ हिंदी\n"
+        "2️⃣ English"
     )
 
 
@@ -639,14 +671,24 @@ def append_broadcast_history(
 
 
 def whatsapp_service_prompt(language: str) -> str:
+    if language == "Hindi":
+        return (
+            "🚨 *कृपया आवश्यक सहायता चुनें:*\n\n"
+            "1️⃣ 🚑 चिकित्सा सहायता\n"
+            "2️⃣ 🍱 भोजन एवं राशन\n"
+            "3️⃣ 🛟 बचाव एवं रेस्क्यू\n"
+            "4️⃣ 💧 पानी एवं आश्रय\n"
+            "5️⃣ 👩‍👧 महिला एवं बाल सुरक्षा\n"
+            "6️⃣ 📦 आवश्यक सामग्री"
+        )
     return (
-        "Choose your service:\n\n"
-        "1 Medical\n"
-        "2 Food\n"
-        "3 Rescue\n"
-        "4 Water\n"
-        "5 Women & Child\n"
-        "6 Emergency"
+        "🚨 *Please choose the assistance you need:*\n\n"
+        "1️⃣ 🚑 Medical Emergency\n"
+        "2️⃣ 🍱 Food and Ration\n"
+        "3️⃣ 🛟 Rescue Operation\n"
+        "4️⃣ 💧 Water and Shelter\n"
+        "5️⃣ 👩‍👧 Women and Child Safety\n"
+        "6️⃣ 📦 Essential Supplies"
     )
 
 
@@ -1082,7 +1124,44 @@ def build_request(
     }
     requests.insert(0, request)
     duplicate_request_index[duplicate_key(category, location_value)] = request_id
+    # Persist current in-memory state to disk so requests survive restarts (best-effort).
+    try:
+        save_state_to_disk()
+    except Exception:
+        pass
     return request
+
+
+def atomic_write_json(path: Path, data: object) -> None:
+    path_parent = path.parent
+    path_parent.mkdir(parents=True, exist_ok=True)
+    # Write to a temp file then atomically replace the target file.
+    with tempfile.NamedTemporaryFile("w", delete=False, dir=str(path_parent), encoding="utf-8") as tf:
+        json.dump(data, tf, ensure_ascii=False, indent=2)
+        tf.flush()
+        temp_name = tf.name
+    Path(temp_name).replace(path)
+
+
+def save_state_to_disk() -> None:
+    """Write a snapshot of in-memory state to backend/data.json (best-effort).
+
+    The file will contain keys: requests, volunteers, missions and counters.
+    """
+    try:
+        target = Path(__file__).resolve().parent / "data.json"
+        payload = {
+            "requests": requests,
+            "volunteers": volunteers,
+            "missions": missions,
+            "request_counter": request_counter,
+            "volunteer_counter": volunteer_counter,
+            "mission_counter": mission_counter,
+        }
+        atomic_write_json(target, payload)
+    except Exception:
+        # Swallow exceptions because persistence is best-effort in this prototype.
+        return
 
 
 def find_request(request_id: str) -> dict[str, Any] | None:
@@ -1994,97 +2073,398 @@ async def create_broadcast(payload: BroadcastIn, request: Request, background_ta
     }
 
 
-@app.post("/ivr")
-async def ivr_create(request: Request, background_tasks: BackgroundTasks):
-    content_type = request.headers.get("content-type", "")
-
-    if "application/json" in content_type:
-        payload = await request.json()
-        phone = str(payload.get("phone") or payload.get("From") or "").strip()
-        digit = str(payload.get("digit") or payload.get("Digits") or "").strip()
-        location = str(payload.get("location") or "").strip() or None
-        zone = str(payload.get("zone") or "").strip() or None
-        payload_kind = "json"
-    else:
-        raw_body = (await request.body()).decode("utf-8", errors="ignore")
-        form = parse_qs(raw_body)
-        phone = str((form.get("From") or form.get("phone") or [""])[0]).strip()
-        digit = str((form.get("Digits") or form.get("digit") or [""])[0]).strip()
-        location = str((form.get("location") or [""])[0]).strip() or None
-        zone = str((form.get("zone") or [""])[0]).strip() or None
-        payload_kind = "form"
-
-    if not digit:
-        reply = "Humein koi input prapt nahi hua. Kripya dobara call karein."
-        if payload_kind == "json":
-            return {"success": False, "message": reply}
-        return Response(
-            content=(
-                "<Response>"
-                f"<Say language=\"hi-IN\" voice=\"Polly.Aditi\">{xml_escape(reply)}</Say>"
-                "</Response>"
-            ),
-            media_type="application/xml",
+@app.api_route("/twilio/voice", methods=["GET", "POST"], response_model=None)
+async def twilio_voice_entry(request: Request) -> Response:
+    """
+    TWILIO IVR MENU ENDPOINT
+    
+    Accepts incoming Twilio calls and presents a dynamic Hindi-language IVR menu.
+    - Returns TwiML with 6 options (digits 1-6)
+    - Uses public URL from BACKEND_PUBLIC_URL environment variable
+    - Gather action points to /ivr for digit input processing
+    
+    Twilio Configuration:
+        A CALL COMES IN → Webhook URL → https://your-public-url/twilio/voice
+    
+    Returns:
+        Response: Valid TwiML XML with HTTP 200
+    """
+    try:
+        print(f"[TWILIO/VOICE] Incoming call - Remote: {request.client}")
+        
+        # Build public URL for callback
+        public_base = backend_public_url()
+        action_url = f"{public_base}/ivr"
+        
+        print(f"[TWILIO/VOICE] Gather action URL: {action_url}")
+        
+        # Build TwiML response
+        vr = twilio_voice_response()
+        
+        # Create gather for digits 1-6
+        gather = vr.gather(num_digits=1, action=action_url, method="POST", timeout=5)
+        
+        # Hindi IVR menu - each digit announced clearly
+        gather.say(
+            "Namaste. SahayakNet Aapda Prabandhan Pranali mein swaagat hai.",
+            language="hi-IN",
+            voice="Polly.Aditi"
         )
+        gather.pause(length=1)
+        gather.say(
+            "Kripya apni zaroorat ko choose karein.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        gather.pause(length=1)
+        
+        # Digit 1: Medical
+        gather.say(
+            "Chikitsa sahayata ke liye ek dabaiye.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        
+        # Digit 2: Food
+        gather.say(
+            "Bhojan aur rashan ke liye do dabaiye.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        
+        # Digit 3: Rescue
+        gather.say(
+            "Bachao avam evakueshun ke liye teen dabaiye.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        
+        # Digit 4: Water & Shelter
+        gather.say(
+            "Pani aur sharn ke liye char dabaiye.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        
+        # Digit 5: Women & Child Safety
+        gather.say(
+            "Mahila aur bachche ki suraksha ke liye paanch dabaiye.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        
+        # Digit 6: Emergency Supplies
+        gather.say(
+            "Aapatkaal ke samaan ke liye chhah dabaiye.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        gather.pause(length=1)
+        gather.say(
+            "Dhanyavaad.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        
+        # Fallback message if no input
+        vr.say(
+            "Humein koi input prapt nahi hua. Kripya dobara call karein.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        vr.hangup()
+        
+        print(f"[TWILIO/VOICE] TwiML menu generated successfully")
+        return twiml_response(vr)
+        
+    except Exception as e:
+        print(f"[TWILIO/VOICE] ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        
+        # Return fallback TwiML with HTTP 200 to prevent Twilio Application Error
+        fallback = twilio_voice_response()
+        fallback.say(
+            "Aapda prabandhan pranali se jud rahe hain. Hamari team aapka sahayta karegi.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        fallback.hangup()
+        return twiml_response(fallback)
 
-    category, _service_label = IVR_DIGIT_MAP.get(digit, ("food", "Food"))
-    zone_value = zone or ivr_zone_from_phone(phone)
-    lat, lng = random_point_near_zone(zone_value)
-    location_value = location or f"Auto detected zone, {zone_value}"
 
-    request = build_request(
-        name="IVR User",
-        phone=phone or "unknown",
-        category=category,  # type: ignore[arg-type]
-        family_size=random.randint(2, 6),
-        location=location_value,
-        zone=zone_value,
-        source="ivr",
-        lat=lat,
-        lng=lng,
-    )
-    background_tasks.add_task(apply_request_post_processing, request["id"])
-    schedule_cache_refresh(background_tasks)
-
-    if payload_kind == "json":
-        return request
-
-    request_id = request["id"]
-    return Response(
-        content=(
-            "<Response>"
-            "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Dhanyavaad. Aapki sahayata request safalta se register ho gayi hai.</Say>"
-            "<Pause length=\"1\"/>"
-            f"<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Kripya dhyaan dein. Aapka request ID hai {xml_escape(request_id)}</Say>"
-            "<Pause length=\"1\"/>"
-            "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Hamari team turant aapki madad ke liye aarahi hai .</Say>"
-            "<Pause length=\"1\"/>"
-            "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Kripya aap apna khayal rakhein.</Say>"
-            "<Hangup/>"
-            "</Response>"
-        ),
-        media_type="application/xml",
-    )
+# Digit to category mapping for IVR
+IVR_CATEGORY_MAP = {
+    "1": ("medical", "Medical Emergency - Chikitsa Sahayata"),
+    "2": ("food", "Food and Ration - Bhojan aur Rashan"),
+    "3": ("rescue", "Rescue Operation - Bachao Evam Evacuation"),
+    "4": ("water", "Water and Shelter - Pani aur Sharn"),
+    "5": ("women_care", "Women and Child Safety - Mahila aur Bachche ki Suraksha"),
+    "6": ("emergency_help", "Essential Supplies - Aapatkaal Samaan"),
+}
 
 
-@app.api_route("/twilio/voice", methods=["GET", "POST"])
-async def twilio_voice_entry() -> Response:
-    action_url = f"{backend_public_url()}/ivr"
-    twiml = (
-        "<Response>"
-        f"<Gather numDigits=\"1\" action=\"{xml_escape(action_url)}\" method=\"POST\">"
-        "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Chikitsa sahayata ke liye 1 dabaiye.</Say>"
-        "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Bhojan sahayata ke liye 2 dabaiye.</Say>"
-        "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Rescue ke liye 3 dabaiye.</Say>"
-        "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Paani aur shelter ke liye 4 dabaiye.</Say>"
-        "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Mahila aur bachcha suraksha ke liye 5 dabaiye.</Say>"
-        "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Aapatkalin samaan ke liye 6 dabaiye.</Say>"
-        "</Gather>"
-        "<Say language=\"hi-IN\" voice=\"Polly.Aditi\">Humein koi input prapt nahi hua. Kripya dobara call karein.</Say>"
-        "</Response>"
-    )
-    return Response(content=twiml, media_type="application/xml")
-    return request
+@app.api_route("/ivr", methods=["GET", "POST"], response_model=None)
+async def ivr_handler(request: Request, background_tasks: BackgroundTasks):
+    """
+    IVR DIGIT INPUT HANDLER
+    
+    Accepts digit input from Twilio IVR callback or frontend simulator.
+    - Supports Twilio form data (application/x-www-form-urlencoded)
+    - Supports frontend JSON mode (application/json)
+    - Maps digits 1-6 to emergency categories
+    - Creates emergency request in system
+    - Returns TwiML confirmation to Twilio
+    - Returns JSON to frontend simulator
+    
+    Twilio sends:
+        POST /ivr
+        Content-Type: application/x-www-form-urlencoded
+        Body: Digits=1&CallSid=CA123&From=+12345&To=+12346&...
+    
+    Returns:
+        Response: Valid TwiML XML with HTTP 200 (for Twilio)
+        dict: JSON response (for frontend simulator)
+    """
+    try:
+        content_type = request.headers.get("content-type", "").lower()
+        print(f"[IVR] Incoming request - Content-Type: {content_type}")
+        print(f"[IVR] Remote: {request.client}")
+        
+        # ====================================================================
+        # MODE 1: JSON MODE (Frontend Simulator)
+        # ====================================================================
+        if "application/json" in content_type:
+            print(f"[IVR] Processing as JSON (frontend simulator)")
+            try:
+                payload = await request.json()
+                print(f"[IVR] JSON Payload: {payload}")
+            except Exception as e:
+                print(f"[IVR] JSON parse error: {e}")
+                return {
+                    "status": "error",
+                    "message": "Invalid JSON payload",
+                    "success": False
+                }
+            
+            phone = str(payload.get("phone") or payload.get("From") or "").strip()
+            digit = str(payload.get("digit") or payload.get("Digits") or "").strip()
+            location = str(payload.get("location") or "").strip() or None
+            zone = str(payload.get("zone") or "").strip() or None
+            
+            print(f"[IVR] JSON Mode - Phone: {phone}, Digit: {digit}, Zone: {zone}")
+            
+            # If no digit, return error response
+            if not digit:
+                print(f"[IVR] No digit in JSON payload")
+                return {
+                    "status": "error",
+                    "message": "Digit parameter required",
+                    "success": False
+                }
+            
+            # Get category mapping
+            if digit not in IVR_CATEGORY_MAP:
+                print(f"[IVR] Invalid digit: {digit}, defaulting to food")
+                digit = "2"  # Default to food if invalid
+            
+            category, category_label = IVR_CATEGORY_MAP[digit]
+            zone_value = zone or ivr_zone_from_phone(phone)
+            lat, lng = random_point_near_zone(zone_value)
+            location_value = location or f"Auto detected zone: {zone_value}"
+            
+            print(f"[IVR] Creating request - Category: {category}, Zone: {zone_value}")
+            
+            # Build emergency request
+            help_request = build_request(
+                name="IVR User",
+                phone=phone or "unknown",
+                category=category,  # type: ignore[arg-type]
+                family_size=random.randint(2, 6),
+                location=location_value,
+                zone=zone_value,
+                source="ivr",
+                lat=lat,
+                lng=lng,
+            )
+            
+            print(f"[IVR] Request created: {help_request['id']}")
+            
+            # Schedule background tasks
+            background_tasks.add_task(apply_request_post_processing, help_request["id"])
+            schedule_cache_refresh(background_tasks)
+            
+            # Auto-assign volunteer
+            background_tasks.add_task(auto_assign_volunteer, help_request)
+            
+            print(f"[IVR] JSON response ready - ID: {help_request['id']}")
+            return help_request
+        
+        # ====================================================================
+        # MODE 2: TWILIO FORM MODE
+        # ====================================================================
+        print(f"[IVR] Processing as Twilio form submission")
+        
+        # Parse form data with robust fallback
+        form_dict = {}
+        try:
+            form = await request.form()
+            form_dict = dict(form)
+            print(f"[IVR] Form parsed successfully - Keys: {list(form_dict.keys())}")
+        except Exception as form_parse_error:
+            print(f"[IVR] Form parsing failed: {form_parse_error}, trying manual parsing")
+            try:
+                raw_body = (await request.body()).decode("utf-8", errors="ignore")
+                print(f"[IVR] Raw body: {raw_body[:200]}")
+                parsed = parse_qs(raw_body)
+                form_dict = {k: v[0] if v else "" for k, v in parsed.items()}
+                print(f"[IVR] Manual parse successful - Keys: {list(form_dict.keys())}")
+            except Exception as manual_parse_error:
+                print(f"[IVR] Manual parsing also failed: {manual_parse_error}")
+                # Return fallback TwiML with 200 to prevent Twilio Application Error
+                print(f"[IVR] Returning fallback TwiML")
+                fallback = twilio_voice_response()
+                fallback.say(
+                    "Aapki request prapt ho gayi. Sewa dene mein koshish jaari hai.",
+                    language="hi-IN",
+                    voice="Polly.Aditi"
+                )
+                fallback.hangup()
+                return twiml_response(fallback)
+        
+        # Extract parameters from form
+        query = request.query_params
+        phone = str(
+            form_dict.get("From") or 
+            form_dict.get("phone") or 
+            query.get("From") or 
+            query.get("phone") or 
+            ""
+        ).strip()
+        digit = str(
+            form_dict.get("Digits") or 
+            form_dict.get("digit") or 
+            query.get("Digits") or 
+            query.get("digit") or 
+            ""
+        ).strip()
+        call_sid = str(form_dict.get("CallSid", "")).strip()
+        from_param = str(form_dict.get("From", "")).strip()
+        to_param = str(form_dict.get("To", "")).strip()
+        
+        print(f"[IVR] Twilio Params - Phone: {phone}, Digit: '{digit}', CallSid: {call_sid}")
+        
+        # If no digit provided, return friendly fallback
+        if not digit:
+            print(f"[IVR] No digit provided by Twilio, returning fallback")
+            fallback_twiml = twilio_voice_response()
+            fallback_twiml.say(
+                "Dhanyavaad. Aapki request prapt ho gayi.",
+                language="hi-IN",
+                voice="Polly.Aditi"
+            )
+            fallback_twiml.hangup()
+            return twiml_response(fallback_twiml)
+        
+        # Validate digit
+        if digit not in IVR_CATEGORY_MAP:
+            print(f"[IVR] Invalid digit '{digit}', mapping to default (food)")
+            digit = "2"  # Default to food
+        
+        category, category_label = IVR_CATEGORY_MAP[digit]
+        zone_value = ivr_zone_from_phone(phone)
+        lat, lng = random_point_near_zone(zone_value)
+        location_value = f"IVR Request - Zone: {zone_value}"
+        
+        print(f"[IVR] Creating emergency request - Category: {category}, Zone: {zone_value}")
+        
+        # Build emergency request
+        help_request = build_request(
+            name="IVR User",
+            phone=phone or call_sid or "unknown",
+            category=category,  # type: ignore[arg-type]
+            family_size=random.randint(2, 6),
+            location=location_value,
+            zone=zone_value,
+            source="ivr",
+            lat=lat,
+            lng=lng,
+        )
+        
+        print(f"[IVR] Request created successfully - ID: {help_request['id']}")
+        
+        # Schedule background tasks
+        background_tasks.add_task(apply_request_post_processing, help_request["id"])
+        schedule_cache_refresh(background_tasks)
+        background_tasks.add_task(auto_assign_volunteer, help_request)
+        
+        # Build confirmation TwiML response
+        request_id = help_request["id"]
+        vr = twilio_voice_response()
+        
+        # Confirmation message in Hindi
+        vr.say(
+            "Dhanyavaad. Aapki sahayata request safalta se register ho gayi hai.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        vr.pause(length=1)
+        
+        # Speak request ID
+        vr.say(
+            f"Aapka request number hai {request_id}",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        vr.pause(length=1)
+        
+        # Category confirmation
+        vr.say(
+            f"Aapne {category_label} chunna hai.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        vr.pause(length=1)
+        
+        # Final message
+        vr.say(
+            "Hamari team turant aapki madad ke liye aa rahi hai. Kripya dhairya rakhen.",
+            language="hi-IN",
+            voice="Polly.Aditi"
+        )
+        vr.pause(length=1)
+        
+        # Hang up
+        vr.hangup()
+        
+        print(f"[IVR] TwiML response built successfully, status: 200")
+        return twiml_response(vr)
+    
+    except Exception as e:
+        print(f"[IVR] EXCEPTION - {type(e).__name__}: {e}")
+        traceback.print_exc()
+        
+        # CRITICAL: Always return valid TwiML with HTTP 200 to prevent Twilio Application Error
+        print(f"[IVR] Returning fallback TwiML due to exception")
+        try:
+            fallback_vr = twilio_voice_response()
+            fallback_vr.say(
+                "Aapda prabandhan pranali se jud rahe hain. Aapki request prapt ho gayi. Hamari team aapko tulal swah sampark karega.",
+                language="hi-IN",
+                voice="Polly.Aditi"
+            )
+            fallback_vr.hangup()
+            return twiml_response(fallback_vr)
+        except Exception as fallback_error:
+            print(f"[IVR] Fallback generation failed: {fallback_error}")
+            # Last resort: return raw XML string
+            raw_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<Response>'
+                '<Say voice="alice" language="en">Your request has been received. Help is being coordinated.</Say>'
+                '<Hangup />'
+                '</Response>'
+            )
+            return Response(content=raw_xml, media_type="application/xml", status_code=200)
 
 
 @app.post("/sms")
@@ -2296,11 +2676,29 @@ async def whatsapp_create(request: Request, background_tasks: BackgroundTasks):
                     whatsapp_user_state.pop(normalized_phone, None)
 
                     # Step 5: Final Reply
-                    reply_text = (
-                        "Request Registered Successfully\n"
-                        f"ID: {request_result['id']}\n"
-                        "Help is on the way"
+                    location_value = (
+                        request_result.get("location")
+                        or request_result.get("zone")
+                        or "Auto detected area"
                     )
+                    if language == "Hindi":
+                        reply_text = (
+                            "✅ *आपकी सहायता अनुरोध सफलतापूर्वक दर्ज हो गया है*\n\n"
+                            f"🆔 *अनुरोध संख्या:* {request_result['id']}\n"
+                            f"📍 *स्थान:* {location_value}\n\n"
+                            "🚑 हमारी राहत टीम आपकी सहायता के लिए रवाना कर दी गई है.\n"
+                            "📞 कृपया अपना मोबाइल फोन चालू और उपलब्ध रखें.\n"
+                            "🙏 सुरक्षित रहें. सहायता शीघ्र पहुँचेगी."
+                        )
+                    else:
+                        reply_text = (
+                            "✅ *Your emergency request has been registered successfully*\n\n"
+                            f"🆔 *Request ID:* {request_result['id']}\n"
+                            f"📍 *Location:* {location_value}\n\n"
+                            "🚑 Our response team has been dispatched to assist you.\n"
+                            "📞 Please keep your phone active and reachable.\n"
+                            "🙏 Stay safe. Help is on the way."
+                        )
             else:
                 reply_text = whatsapp_language_prompt()
 

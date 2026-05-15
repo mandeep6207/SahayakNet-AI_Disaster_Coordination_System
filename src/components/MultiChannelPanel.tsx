@@ -34,7 +34,7 @@ const MOCK_DRONE_DETECTIONS: Array<{
 ];
 
 export default function MultiChannelPanel() {
-  const { refreshDashboard } = useApp();
+  const { refreshDashboard, state } = useApp();
   const [activeTab, setActiveTab] = useState('ivr');
   const [ivrPhone, setIvrPhone] = useState('');
   const [ivrLog, setIvrLog] = useState<string[]>([]);
@@ -170,7 +170,7 @@ export default function MultiChannelPanel() {
         {activeTab === 'whatsapp' && (
           <div>
             <div className="text-xs text-gray-500 mb-3">Simulate WhatsApp message. Keywords are parsed to create requests.</div>
-            <div className="text-xs text-blue-600 mb-2 font-medium">Example: "Need food for 5 people", "Baby care needed", or "Urgent water shortage"</div>
+            <div className="text-xs text-blue-600 mb-2 font-medium">Example: &quot;Need food for 5 people&quot;, &quot;Baby care needed&quot;, or &quot;Urgent water shortage&quot;</div>
             <input
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2"
               placeholder="Sender phone number"
@@ -203,32 +203,60 @@ export default function MultiChannelPanel() {
           <div>
             <div className="text-xs text-gray-500 mb-3">Drone AI detection feed. Click to convert detections into rescue requests.</div>
             <div className="space-y-2">
-              {MOCK_DRONE_DETECTIONS.map((d) => {
-                const converted = droneConverted.includes(d.id);
-                const flagColor = d.flag === 'red' ? '#dc2626' : d.flag === 'yellow' ? '#d97706' : '#16a34a';
-                return (
-                  <div key={d.id} className="flex items-center justify-between p-2 rounded-lg border" style={{ borderColor: flagColor + '44', background: flagColor + '11' }}>
-                    <div>
-                      <div className="text-xs font-bold" style={{ color: flagColor }}>
-                        🚁 {d.id} – {d.persons} persons detected
+              {/* Merge live drone requests from dashboard with mock detections; prefer live entries */}
+              {(() => {
+                const live = state.dashboard.requests.filter((r) => r.source === 'drone');
+                const liveMapped = live.map((r) => ({
+                  id: r.id,
+                  lat: r.lat ?? (r.droneMeta?.image ? 0 : 0),
+                  lng: r.lng ?? 0,
+                  persons: r.people ?? r.peopleCount ?? r.droneMeta?.peopleCount ?? 1,
+                  flag: (r.droneMeta?.flag as 'red' | 'yellow' | 'green') ?? (r.priority && r.priority > 40 ? 'red' : 'yellow'),
+                  area: r.location ?? r.zone ?? 'Unknown area',
+                }));
+
+                const merged: Array<typeof MOCK_DRONE_DETECTIONS[0]> = [];
+                const seen = new Set<string>();
+
+                // prefer live first
+                for (const d of liveMapped) {
+                  if (!d.id) continue;
+                  merged.push(d);
+                  seen.add(d.id);
+                }
+
+                for (const d of MOCK_DRONE_DETECTIONS) {
+                  if (seen.has(d.id)) continue;
+                  merged.push(d);
+                }
+
+                return merged.map((d) => {
+                  const converted = droneConverted.includes(d.id);
+                  const flagColor = d.flag === 'red' ? '#dc2626' : d.flag === 'yellow' ? '#d97706' : '#16a34a';
+                  return (
+                    <div key={d.id} className="flex items-center justify-between p-2 rounded-lg border" style={{ borderColor: flagColor + '44', background: flagColor + '11' }}>
+                      <div>
+                        <div className="text-xs font-bold" style={{ color: flagColor }}>
+                          🚁 {d.id} – {d.persons} persons detected
+                        </div>
+                        <div className="text-xs text-gray-500">{d.area}</div>
                       </div>
-                      <div className="text-xs text-gray-500">{d.area}</div>
+                      <button
+                        onClick={() => convertDroneDetection(d)}
+                        disabled={converted}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          converted
+                            ? 'bg-gray-100 text-gray-400'
+                            : 'text-white hover:opacity-90'
+                        }`}
+                        style={{ background: converted ? undefined : flagColor }}
+                      >
+                        {converted ? <><CheckCircle size={12} className="inline mr-1" />Done</> : 'Convert →'}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => convertDroneDetection(d)}
-                      disabled={converted}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        converted
-                          ? 'bg-gray-100 text-gray-400'
-                          : 'text-white hover:opacity-90'
-                      }`}
-                      style={{ background: converted ? undefined : flagColor }}
-                    >
-                      {converted ? <><CheckCircle size={12} className="inline mr-1" />Done</> : 'Convert →'}
-                    </button>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
         )}

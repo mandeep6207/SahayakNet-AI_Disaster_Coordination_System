@@ -46,9 +46,12 @@ export default function GovernmentPage() {
     ivrRequests.forEach((req) => seen.add(req.id));
 
     if (fresh.length > 0) {
-      setIvrToast('📞 New IVR request received');
-      const timer = window.setTimeout(() => setIvrToast(''), 2600);
-      return () => window.clearTimeout(timer);
+      const showTimer = window.setTimeout(() => setIvrToast('📞 New IVR request received'), 0);
+      const hideTimer = window.setTimeout(() => setIvrToast(''), 2600);
+      return () => {
+        window.clearTimeout(showTimer);
+        window.clearTimeout(hideTimer);
+      };
     }
   }, [state.dashboard.requests]);
 

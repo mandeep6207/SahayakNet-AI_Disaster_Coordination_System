@@ -22,16 +22,6 @@ export const REQUEST_CATEGORY_HINTS: Record<RequestCategory, string[]> = {
   emergency_help: ['emergency', 'help', 'urgent', 'essential', 'power', 'torch'],
 };
 
-type ResourceNeedSummary = {
-  food: number;
-  medicine: number;
-  shelter: number;
-  babyCare: number;
-  womenCare: number;
-  water: number;
-  emergency: number;
-};
-
 export interface DepletionForecast {
   resourceName: string;
   available: number;
